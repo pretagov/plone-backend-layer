@@ -1,8 +1,7 @@
-name: Build, test and publish
+name: Build and test
 
-# Every Plone version a site runs gets an image, tagged with that version:
-#   ghcr.io/pretagov/plone-backend-layer:6.2.2
-# Pull requests build and test; main also publishes.
+# The layer against every Plone version a site runs. Nothing is published:
+# sites fetch docker-entrypoint.sh from this repo at a pinned commit (README).
 on:
   push:
     branches: [main]
@@ -11,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
@@ -38,10 +36,3 @@ jobs:
 
       - name: Test
         run: bash tests/test.sh layer:test "host=127.0.0.1 port=5432 dbname=zodb user=plone password=plone"
-
-      - name: Publish
-        if: github.event_name != 'pull_request'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          docker tag layer:test ghcr.io/pretagov/plone-backend-layer:${{ matrix.plone-version }}
-          docker push ghcr.io/pretagov/plone-backend-layer:${{ matrix.plone-version }}

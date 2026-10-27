@@ -1,15 +1,30 @@
 # plone-backend-layer
 
-`plone/plone-backend`, plus the settings it has no environment variable for.
-Same image otherwise — same entrypoint, same `CMD`, same commands — so a site
-switches by changing one line:
+Settings `plone/plone-backend` has no environment variable for, added by one
+script — `docker-entrypoint.sh` — that wraps the image's own entrypoint. A site
+keeps `FROM plone/plone-backend` and adds the script in its own Dockerfile,
+pinned to a commit of this repo and checked by hash:
 
 ```dockerfile
-FROM ghcr.io/pretagov/plone-backend-layer:6.2.2
+FROM plone/plone-backend:6.2.2
+# plone-backend-layer (https://github.com/pretagov/plone-backend-layer): env vars
+# for settings the image lacks. Pinned: move the commit and hash together.
+ADD --checksum=sha256:<sha256 of the file> \
+    https://raw.githubusercontent.com/pretagov/plone-backend-layer/<commit>/docker-entrypoint.sh \
+    /app/docker-entrypoint.layer.sh
+RUN mv /app/docker-entrypoint.sh /app/docker-entrypoint.plone.sh \
+ && mv /app/docker-entrypoint.layer.sh /app/docker-entrypoint.sh \
+ && chmod 0755 /app/docker-entrypoint.sh
 ```
 
-Images are published for each Plone version listed in
-`.github/workflows/build.yml`. Add a version there to get its image.
+The hash for a commit:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pretagov/plone-backend-layer/<commit>/docker-entrypoint.sh | shasum -a 256
+```
+
+Nothing is published to a registry: the build fetches the file, and the build
+cache keeps it. The `Dockerfile` here does the same wiring for CI.
 
 ## A database that suspends
 
@@ -26,7 +41,7 @@ one quickly.
 Set these in the site's `fly.toml` `[env]` (all opt-in; unset changes nothing):
 
 | Variable | What it sets | Suggested |
-|---|---|---|
+| --- | --- | --- |
 | `ZODB_POOL_TIMEOUT` | `pool-timeout` on the main ZODB: an idle connection, and its database connections, is closed after this many seconds. Keep it below Postgres's `idle_session_timeout`. | `60` |
 | `PG_KEEPALIVES_IDLE` | libpq TCP keepalive: seconds idle before probing | `30` |
 | `PG_KEEPALIVES_INTERVAL` | seconds between probes | `10` |
@@ -43,11 +58,13 @@ a quiet spell refill it.
 
 ## How it works
 
-`docker-entrypoint.sh` here replaces the image's own, which is kept as
-`docker-entrypoint.plone.sh` and run last. Anything that calls
+The script runs first and hands over to the image's own entrypoint, kept as
+`docker-entrypoint.plone.sh`. Wrapping it in place means anything that calls
 `./docker-entrypoint.sh` directly (a site's start or release script) gets the
 layer too. Each edit is anchored and checked: if a new base image changes the
 line it looks for, the container fails to start rather than run without the
 setting.
 
-`tests/test.sh` runs in CI against a real Postgres for every version.
+`tests/test.sh` runs in CI against a real Postgres for every Plone version in
+`.github/workflows/build.yml`. A plone-backend change upstream to read these
+variables itself would make this repo unnecessary.
